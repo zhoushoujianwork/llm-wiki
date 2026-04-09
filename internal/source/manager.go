@@ -7,46 +7,46 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/google/uuid"
-	"github.com/mitchellh/go-wordwrap"
 )
 
 // Source represents a document source (GitHub repo, local path, or URL)
 type Source struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`   // "github", "local", "url"
-	URL    string `json:"url"`    // original URL or path
-	Local  string `json:"local"` // local path (for cloned repos)
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`   // "github", "local", "url"
+	URL       string `json:"url"`    // original URL or path
+	Local     string `json:"local"`  // local path (for cloned repos)
+	UseGitHub bool   `json:"use_github_api"` // use GitHub API instead of git clone
 }
 
 // Document represents a single document within a source
 type Document struct {
 	ID       string `json:"id"`
 	SourceID string `json:"source_id"`
-	Path     string `json:"path"`       // absolute path
-	RelPath  string `json:"rel_path"`   // relative to source root
-	Type     string `json:"type"`       // "markdown", "pdf", "text"
-	Content  string `json:"content"`   // raw content
-	Checksum string `json:"checksum"`   // for change detection
+	Path     string `json:"path"`      // absolute path
+	RelPath  string `json:"rel_path"`  // relative to source root
+	Type     string `json:"type"`      // "markdown", "pdf", "text"
+	Checksum string `json:"checksum"`  // for change detection
 }
 
 // Manager handles source discovery and management
 type Manager struct {
-	sourcesDir string
+	sourcesDir  string
 	sourcesFile string
 }
 
 // NewManager creates a new source manager
 func NewManager(sourcesDir string) *Manager {
 	return &Manager{
-		sourcesDir: sourcesDir,
+		sourcesDir:  sourcesDir,
 		sourcesFile: filepath.Join(sourcesDir, ".sources.json"),
 	}
 }
 
 // Add adds a new source
-func (m *Manager) Add(urlOrPath string) (*Source, error) {
+func (m *Manager) Add(urlOrPath string, useGithubAPI bool) (*Source, error) {
 	sources, _ := m.List()
 
 	// Determine type
@@ -54,6 +54,7 @@ func (m *Manager) Add(urlOrPath string) (*Source, error) {
 	if strings.HasPrefix(urlOrPath, "http://") || strings.HasPrefix(urlOrPath, "https://") {
 		if strings.Contains(urlOrPath, "github.com") {
 			src.Type = "github"
+			src.UseGitHub = useGithubAPI
 		} else {
 			src.Type = "url"
 		}
@@ -80,13 +81,16 @@ func (m *Manager) Add(urlOrPath string) (*Source, error) {
 
 	src.ID = uuid.New().String()
 
-	// Clone/sync if GitHub
-	if src.Type == "github" {
+	// Clone/sync if GitHub (unless using GitHub API)
+	if src.Type == "github" && !src.UseGitHub {
 		localPath := filepath.Join(m.sourcesDir, src.Name)
 		if err := m.cloneOrPull(urlOrPath, localPath); err != nil {
 			return nil, fmt.Errorf("git clone/pull failed: %w", err)
 		}
 		src.Local = localPath
+	} else if src.Type == "github" && src.UseGitHub {
+		// GitHub API mode: store URL but don't clone
+		src.Local = filepath.Join(m.sourcesDir, src.Name)
 	}
 
 	sources = append(sources, src)
@@ -136,7 +140,7 @@ func (m *Manager) SyncAll() (int, error) {
 	}
 	count := 0
 	for _, s := range sources {
-		if s.Type == "github" {
+		if s.Type == "github" && !s.UseGitHub {
 			if err := m.cloneOrPull(s.URL, s.Local); err != nil {
 				fmt.Printf("Warning: failed to sync %s: %v\n", s.Name, err)
 				continue
@@ -150,14 +154,14 @@ func (m *Manager) SyncAll() (int, error) {
 // DiscoverDocuments finds all documents in a source
 func (m *Manager) DiscoverDocuments(src Source) ([]Document, error) {
 	root := src.Local
-	if root == "" {
-		root = src.URL
+	if root == "" || src.UseGitHub {
+		return nil, fmt.Errorf("GitHub API mode not yet implemented for document discovery")
 	}
 
 	var docs []Document
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // skip errors
+			return nil
 		}
 		if info.IsDir() {
 			return nil
@@ -175,10 +179,9 @@ func (m *Manager) DiscoverDocuments(src Source) ([]Document, error) {
 		case ".txt", ".text":
 			docType = "text"
 		default:
-			return nil // skip unsupported types
+			return nil
 		}
 
-		// Skip hidden files
 		if strings.HasPrefix(filepath.Base(path), ".") {
 			return nil
 		}
@@ -198,13 +201,44 @@ func (m *Manager) DiscoverDocuments(src Source) ([]Document, error) {
 }
 
 func (m *Manager) cloneOrPull(url, path string) error {
+	os.MkdirAll(filepath.Dir(path), 0755)
+
 	// Check if already cloned
 	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
 		// git pull
-		return runGit(path, "pull", "origin", "main")
+		return gitPull(path)
 	}
 	// git clone
-	return runGit(m.sourcesDir, "clone", url, path)
+	return gitClone(url, path)
+}
+
+func gitClone(url, path string) error {
+	_, err := git.PlainClone(path, false, &git.CloneOptions{
+		URL:      url,
+		Depth:    100,
+		Progress: os.Stdout,
+	})
+	return err
+}
+
+func gitPull(path string) error {
+	r, err := git.PlainOpen(path)
+	if err != nil {
+		return err
+	}
+
+	w, err := r.Worktree()
+	if err != nil {
+		return err
+	}
+
+	err = w.Pull(&git.PullOptions{
+		Force: true,
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return err
+	}
+	return nil
 }
 
 func (m *Manager) saveSources(sources []Source) error {
@@ -219,11 +253,4 @@ func (m *Manager) saveSources(sources []Source) error {
 func guessName(urlOrPath string) string {
 	parts := strings.Split(strings.TrimSuffix(urlOrPath, ".git"), "/")
 	return parts[len(parts)-1]
-}
-
-// Simple git wrapper — uses system git binary
-func runGit(dir string, args ...string) error {
-	// Placeholder: will be replaced with go-git or exec
-	_ = wordwrap.WrapString("placeholder", 80)
-	return nil // TODO: implement
 }
