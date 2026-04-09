@@ -1,4 +1,4 @@
-.PHONY: build install clean test lint fmt vet
+.PHONY: build install clean test lint fmt vet wiki-install wiki-kill-port wiki-dev wiki-build wiki-preview
 
 # Go parameters
 GOCMD=go
@@ -48,6 +48,29 @@ tidy:
 # Development helpers
 dev: tidy build
 	@echo "Built at $(BUILD_DIR)/$(BINARY_NAME)"
+
+# VitePress wiki UI — fixed port 5173 only (requires Node/npm in wiki/)
+WIKI_DIR := wiki
+WIKI_PORT := 5173
+
+wiki-install:
+	cd $(WIKI_DIR) && npm install
+
+# Kill whatever is listening on WIKI_PORT (e.g. old VitePress) so dev never hops to 5174/5175.
+wiki-kill-port:
+	@for pid in $$(lsof -ti :$(WIKI_PORT) 2>/dev/null); do \
+	  echo "Stopping PID $$pid on port $(WIKI_PORT)"; \
+	  kill $$pid 2>/dev/null || kill -9 $$pid 2>/dev/null; \
+	done
+
+wiki-dev: wiki-install wiki-kill-port
+	cd $(WIKI_DIR) && npm run dev -- --port $(WIKI_PORT) --strictPort
+
+wiki-build: wiki-install
+	cd $(WIKI_DIR) && npm run build
+
+wiki-preview: wiki-install
+	cd $(WIKI_DIR) && npm run preview
 
 # Build for multiple platforms
 build-all: tidy

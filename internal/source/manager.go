@@ -677,7 +677,16 @@ func matchPattern(path, pattern string) bool {
 		if hasTrailingGlob {
 			return strings.HasPrefix(path, segments[0]) || strings.Contains(path, "/"+segments[0])
 		}
-		return matchGlob(path, segments[0])
+		pat := segments[0]
+		// Git: a pattern with no "/" matches any path component (e.g. managed_components/ ignores nested files).
+		if !strings.Contains(pat, "/") && !strings.ContainsAny(pat, "*?[]") {
+			for _, seg := range strings.Split(path, "/") {
+				if seg == pat {
+					return true
+				}
+			}
+		}
+		return matchGlob(path, pat)
 	}
 
 	// Pattern contains **
@@ -793,7 +802,8 @@ func isIgnoredDir(path string) bool {
 		if part == "node_modules" || part == "dist" || part == "build" ||
 			part == ".git" || part == "vendor" || part == "__pycache__" ||
 			part == ".vite" || part == ".next" || part == ".nuxt" ||
-			part == "target" || part == ".cache" || part == ".turbo" {
+			part == "target" || part == ".cache" || part == ".turbo" ||
+			part == "managed_components" || part == ".pio" {
 			return true
 		}
 	}
