@@ -1,5 +1,6 @@
 # Binaries
 llm-wiki
+llm-wiki.exe
 *.exe
 
 # Build output
@@ -28,5 +29,3 @@ Thumbs.db
 # Credentials
 *.pem
 *.key
-wiki/
-sources/
