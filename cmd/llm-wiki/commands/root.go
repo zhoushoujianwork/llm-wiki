@@ -32,8 +32,14 @@ func autoLoadConfig() *Config {
 		filepath.Join(homeDir, ".llm-wiki", "llm-wiki.yaml"),
 		filepath.Join(homeDir, ".openclaw", "workspace", "skills", "llm-wiki", "llm-wiki.yaml"),
 	}
-	paths := append([]string{cfgFile}, defaultConfigPaths...)
+	paths := defaultConfigPaths
+	if cfgFile != "" {
+		paths = append([]string{cfgFile}, paths...)
+	}
 	for _, p := range paths {
+		if p == "" {
+			continue
+		}
 		data, err := os.ReadFile(p)
 		if err != nil {
 			continue
