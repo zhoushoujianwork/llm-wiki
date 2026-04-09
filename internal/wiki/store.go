@@ -1,78 +1,163 @@
 package wiki
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/zhoushoujianwork/llm-wiki/internal/source"
 )
 
-// Page represents a wiki page
+const compiledStateFilename = ".compiled.json"
+
+// safeWalkSkip returns filepath.SkipDir if the directory should be skipped.
+func safeWalkSkip(path string, info os.FileInfo, err error) (bool, error) {
+	if err != nil {
+		// Skip permission denied or non-existent paths
+		return false, nil
+	}
+	if info.IsDir() {
+		// Skip hidden directories (starting with .)
+		if strings.HasPrefix(info.Name(), ".") {
+			return false, filepath.SkipDir
+		}
+	}
+	return false, nil
+}
+
+// Page represents a wiki page.
 type Page struct {
 	Namespace string   `json:"namespace"`
-	Name     string   `json:"name"`
-	Type     string   `json:"type"`
-	Content  string   `json:"content"`
-	Links    []string `json:"links"`
+	Name      string   `json:"name"`
+	Type      string   `json:"type"`
+	Content   string   `json:"content"`
+	Links     []string `json:"links"`
+	Tags      []string `json:"tags,omitempty"`
 }
 
-// Index maps concepts/entities to page paths
+// Index maps concepts and entities to page paths.
 type Index struct {
-	Entries map[string][]string `json:"entries"` // concept → page paths
+	Entries map[string][]string `json:"entries"`
 }
 
-// Store handles wiki page persistence
+type compiledState struct {
+	Documents map[string]compiledDocument `json:"documents"`
+}
+
+type compiledDocument struct {
+	Checksum   string    `json:"checksum"`
+	Pages      []string  `json:"pages"`
+	CompiledAt time.Time `json:"compiled_at"`
+}
+
+// Store handles wiki page persistence.
 type Store struct {
-	rootDir string
-	index   *Index
+	rootDir       string
+	index         *Index
+	compiledFile  string
+	compiledState compiledState
 }
 
-// NewStore creates a new wiki store
+// NewStore creates a new wiki store.
 func NewStore(rootDir string) *Store {
-	return &Store{
-		rootDir: rootDir,
+	store := &Store{
+		rootDir:      rootDir,
+		compiledFile: filepath.Join(rootDir, compiledStateFilename),
 		index: &Index{
 			Entries: make(map[string][]string),
 		},
+		compiledState: compiledState{
+			Documents: make(map[string]compiledDocument),
+		},
 	}
+	_ = store.loadCompiledState()
+	return store
 }
 
-// WritePage writes a page to the wiki
-func (s *Store) WritePage(namespace string, page Page) error {
+// WritePage writes a page to the wiki and returns the resulting path.
+func (s *Store) WritePage(namespace string, page Page) (string, error) {
 	nsDir := filepath.Join(s.rootDir, namespace)
-	if err := os.MkdirAll(nsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create namespace dir: %w", err)
+	if err := os.MkdirAll(nsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create namespace dir: %w", err)
 	}
 
-	filename := fmt.Sprintf("%s.md", page.Name)
-	// Ensure unique filename
-	filename = s.uniqueFilename(nsDir, filename)
+	filename := s.uniqueFilename(nsDir, fmt.Sprintf("%s.md", page.Name))
 	path := filepath.Join(nsDir, filename)
 
-	if err := os.WriteFile(path, []byte(page.Content), 0644); err != nil {
-		return fmt.Errorf("failed to write page: %w", err)
+	if err := os.WriteFile(path, []byte(page.Content), 0o644); err != nil {
+		return "", fmt.Errorf("failed to write page: %w", err)
 	}
 
-	// Update index
 	s.index.Entries[page.Name] = append(s.index.Entries[page.Name], path)
-
-	return nil
+	return path, nil
 }
 
-// NeedsCompilation checks if a document needs compilation
-func (s *Store) NeedsCompilation(sourceName, docPath string) bool {
-	// TODO: Check mtime comparison
-	// For now, always compile
-	return true
+// StoreDocumentPages replaces the generated pages for a document and persists its checksum.
+func (s *Store) StoreDocumentPages(namespace string, doc source.Document, pages []Page) error {
+	if err := os.MkdirAll(s.rootDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create wiki root: %w", err)
+	}
+
+	key := s.documentKey(namespace, doc.RelPath)
+	if previous, ok := s.compiledState.Documents[key]; ok {
+		for _, pagePath := range previous.Pages {
+			_ = os.Remove(filepath.Join(s.rootDir, pagePath))
+		}
+	}
+
+	writtenPages := make([]string, 0, len(pages))
+	for _, page := range pages {
+		pagePath, err := s.WritePage(namespace, page)
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(s.rootDir, pagePath)
+		if err != nil {
+			return fmt.Errorf("failed to compute page path: %w", err)
+		}
+		writtenPages = append(writtenPages, filepath.ToSlash(relPath))
+	}
+
+	s.compiledState.Documents[key] = compiledDocument{
+		Checksum:   doc.Checksum,
+		Pages:      writtenPages,
+		CompiledAt: time.Now().UTC(),
+	}
+
+	return s.saveCompiledState()
 }
 
-// RebuildIndex rebuilds the concept → page index
+// NeedsCompilation reports whether a document should be recompiled.
+func (s *Store) NeedsCompilation(namespace string, doc source.Document) bool {
+	if strings.TrimSpace(doc.Checksum) == "" {
+		return true
+	}
+
+	entry, ok := s.compiledState.Documents[s.documentKey(namespace, doc.RelPath)]
+	if !ok {
+		return true
+	}
+
+	return entry.Checksum != doc.Checksum
+}
+
+// RebuildIndex rebuilds the concept → page index.
 func (s *Store) RebuildIndex() error {
 	s.index.Entries = make(map[string][]string)
 
 	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+		if skip, err := safeWalkSkip(path, info, err); skip {
 			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if err != nil {
+			return nil
 		}
 		if !strings.HasSuffix(path, ".md") {
 			return nil
@@ -83,9 +168,10 @@ func (s *Store) RebuildIndex() error {
 			return nil
 		}
 
-		// Extract links from content
-		links := extractLinks(string(content))
-		for _, link := range links {
+		pageName := strings.TrimSuffix(info.Name(), ".md")
+		s.index.Entries[pageName] = append(s.index.Entries[pageName], path)
+
+		for _, link := range extractLinks(string(content)) {
 			s.index.Entries[link] = append(s.index.Entries[link], path)
 		}
 
@@ -95,15 +181,23 @@ func (s *Store) RebuildIndex() error {
 	return err
 }
 
-// FindRelevantPages finds pages relevant to a query
+// FindRelevantPages finds pages relevant to a query.
 func (s *Store) FindRelevantPages(query string) ([]Page, error) {
-	// Simple implementation: search all pages for query terms
 	queryLower := strings.ToLower(query)
 	var results []Page
 
 	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
+		if skip, err := safeWalkSkip(path, info, err); skip {
 			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if err != nil {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".md") {
+			return nil
 		}
 
 		content, err := os.ReadFile(path)
@@ -112,9 +206,9 @@ func (s *Store) FindRelevantPages(query string) ([]Page, error) {
 		}
 
 		if strings.Contains(strings.ToLower(string(content)), queryLower) {
-			rel, _ := filepath.Rel(s.rootDir, filepath.Dir(path))
+			namespace, _ := filepath.Rel(s.rootDir, filepath.Dir(path))
 			results = append(results, Page{
-				Namespace: rel,
+				Namespace: filepath.ToSlash(namespace),
 				Name:      strings.TrimSuffix(info.Name(), ".md"),
 				Content:   string(content),
 			})
@@ -124,6 +218,78 @@ func (s *Store) FindRelevantPages(query string) ([]Page, error) {
 	})
 
 	return results, err
+}
+
+// AllPages loads every wiki page in storage.
+func (s *Store) AllPages() ([]Page, error) {
+	var pages []Page
+
+	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
+		if skip, err := safeWalkSkip(path, info, err); skip {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if err != nil {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		namespace, _ := filepath.Rel(s.rootDir, filepath.Dir(path))
+		pages = append(pages, Page{
+			Namespace: filepath.ToSlash(namespace),
+			Name:      strings.TrimSuffix(info.Name(), ".md"),
+			Content:   string(content),
+			Links:     extractLinks(string(content)),
+		})
+		return nil
+	})
+
+	return pages, err
+}
+
+func (s *Store) documentKey(namespace, relPath string) string {
+	return namespace + "::" + filepath.ToSlash(relPath)
+}
+
+func (s *Store) loadCompiledState() error {
+	data, err := os.ReadFile(s.compiledFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var state compiledState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+	if state.Documents == nil {
+		state.Documents = make(map[string]compiledDocument)
+	}
+
+	s.compiledState = state
+	return nil
+}
+
+func (s *Store) saveCompiledState() error {
+	data, err := json.MarshalIndent(s.compiledState, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode compiled state: %w", err)
+	}
+	if err := os.WriteFile(s.compiledFile, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write compiled state: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) uniqueFilename(dir, filename string) string {
@@ -136,22 +302,33 @@ func (s *Store) uniqueFilename(dir, filename string) string {
 	ext := ".md"
 	i := 1
 	for {
-		path = filepath.Join(dir, fmt.Sprintf("%s_%d%s", base, i, ext))
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return filepath.Base(path)
+		candidate := filepath.Join(dir, fmt.Sprintf("%s_%d%s", base, i, ext))
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return filepath.Base(candidate)
 		}
 		i++
 	}
 }
 
 func extractLinks(content string) []string {
-	// Simple wiki-style link extraction: [[Page Name]]
 	var links []string
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
-		if strings.HasPrefix(line, "[[") && strings.HasSuffix(line, "]]") {
-			link := strings.TrimSuffix(strings.TrimPrefix(line, "[["), "]]")
-			links = append(links, link)
+		start := strings.Index(line, "[[")
+		for start != -1 {
+			end := strings.Index(line[start+2:], "]]")
+			if end == -1 {
+				break
+			}
+			link := strings.TrimSpace(line[start+2 : start+2+end])
+			if link != "" {
+				links = append(links, link)
+			}
+			nextStart := strings.Index(line[start+2+end+2:], "[[")
+			if nextStart == -1 {
+				break
+			}
+			start = start + 2 + end + 2 + nextStart
 		}
 	}
 	return links
