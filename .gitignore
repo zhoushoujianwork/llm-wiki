@@ -1,0 +1,30 @@
+# Binaries
+llm-wiki
+*.exe
+
+# Build output
+dist/
+
+# Sources cache (cloned repos)
+sources/
+
+# Wiki output (optional — may want to commit)
+# wiki/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials
+*.pem
+*.key
