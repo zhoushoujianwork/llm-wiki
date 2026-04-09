@@ -6,11 +6,19 @@ llm-wiki.exe
 # Build output
 dist/
 
+# VitePress frontend (generated at runtime)
+wiki/llm-wiki
+wiki/node_modules/
+wiki/.vitepress/cache/
+wiki/.vitepress/dist/
+
+# Compiled wiki content (user-specific, generated at runtime)
+wiki/bbclaw/
+wiki/.compiled.json
+wiki/llm-wiki-test/
+
 # Sources cache (cloned repos)
 sources/
-
-# Wiki output (optional — may want to commit)
-# wiki/
 
 # Environment
 .env
