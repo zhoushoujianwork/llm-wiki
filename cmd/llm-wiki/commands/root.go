@@ -2,6 +2,7 @@ package commands
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -25,10 +26,13 @@ func autoLoadConfig() *Config {
 	if cachedConfig != nil {
 		return cachedConfig
 	}
-	paths := []string{
+	homeDir, _ := os.UserHomeDir()
+	defaultConfigPaths := []string{
 		"llm-wiki.yaml",
-		"/Users/mikas/.openclaw/workspace/skills/llm-wiki/llm-wiki.yaml",
+		filepath.Join(homeDir, ".llm-wiki", "llm-wiki.yaml"),
+		filepath.Join(homeDir, ".openclaw", "workspace", "skills", "llm-wiki", "llm-wiki.yaml"),
 	}
+	paths := append([]string{cfgFile}, defaultConfigPaths...)
 	for _, p := range paths {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -94,11 +98,13 @@ func NewRootCmd() *cobra.Command {
 		Short: "LLM Wiki — Build a personal Wikipedia with LLMs",
 		Long:  `Feed documents in, get a searchable wiki out. Supports GitHub repos, local files, and URLs.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			configPaths := []string{
-				cfgFile,
-				"llm-wiki.yaml",
-				"/Users/mikas/.openclaw/workspace/skills/llm-wiki/llm-wiki.yaml",
-			}
+				homeDir, _ := os.UserHomeDir()
+				configPaths := []string{
+					cfgFile,
+					"llm-wiki.yaml",
+					filepath.Join(homeDir, ".llm-wiki", "llm-wiki.yaml"),
+					filepath.Join(homeDir, ".openclaw", "workspace", "skills", "llm-wiki", "llm-wiki.yaml"),
+				}
 			for _, p := range configPaths {
 				if p == "" {
 					continue
