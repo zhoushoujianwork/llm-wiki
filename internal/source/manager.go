@@ -1,6 +1,7 @@
 package source
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -207,15 +208,59 @@ func (m *Manager) DiscoverDocuments(src Source) ([]Document, error) {
 		return nil, fmt.Errorf("source %s has no local root", src.Name)
 	}
 
+	// Create gitignore matcher at root
+	giMatcher, err := newGitignoreMatcher(root, nil)
+	if err != nil {
+		// If we can't load gitignore, continue without it
+		giMatcher = nil
+	}
+
 	var docs []Document
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
 			return nil
 		}
 
 		rel, _ := filepath.Rel(root, path)
+
+		if info.IsDir() {
+			// Skip descending into .git directory
+			if rel == ".git" {
+				return filepath.SkipDir
+			}
+
+			// Skip descending into known build/output directories (hardcoded)
+			if isIgnoredDir(rel) {
+				return filepath.SkipDir
+			}
+
+			// Check if this directory has a .gitignore (may affect children)
+			giPath := filepath.Join(path, ".gitignore")
+			if _, err := os.Stat(giPath); err == nil && giMatcher != nil {
+				// Create child matcher for this subdirectory
+				subRel, _ := filepath.Rel(root, path)
+				childMatcher, err := giMatcher.Child(subRel)
+				if err == nil {
+					giMatcher = childMatcher
+				}
+			}
+
+			// Use gitignore to check if directory should be ignored
+			if giMatcher != nil && giMatcher.IsIgnored(filepath.ToSlash(rel), true) {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		// Skip files in ignored paths, hidden files, or by gitignore rules
 		docType := detectDocumentType(rel)
-		if docType == "" || isHiddenPath(rel) {
+		if docType == "" || isHiddenPath(rel) || isInIgnoredPath(rel) {
+			return nil
+		}
+
+		// Use gitignore to check if file should be ignored
+		if giMatcher != nil && giMatcher.IsIgnored(filepath.ToSlash(rel), false) {
 			return nil
 		}
 
@@ -452,6 +497,312 @@ func isHiddenPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// gitignoreMatcher holds parsed .gitignore rules for a directory tree.
+type gitignoreMatcher struct {
+	rules     []gitignorePattern // patterns from this directory's .gitignore
+	parent    *gitignoreMatcher  // parent directory's matcher
+	dir       string             // the directory this matcher is for
+}
+
+type gitignorePattern struct {
+	pattern  string // the pattern (without leading !)
+	negate  bool   // true if pattern is negated (!pattern)
+	dirOnly bool   // true if pattern ends with /
+}
+
+// newGitignoreMatcher creates a gitignore matcher for the given root directory.
+// It loads .gitignore from root and merges with parent matcher's rules.
+func newGitignoreMatcher(root string, parent *gitignoreMatcher) (*gitignoreMatcher, error) {
+	m := &gitignoreMatcher{
+		rules:  make([]gitignorePattern, 0),
+		parent: parent,
+		dir:    root,
+	}
+
+	// Load .gitignore from this directory
+	giPath := filepath.Join(root, ".gitignore")
+	if err := m.loadFile(giPath); err != nil {
+		// .gitignore might not exist, that's fine
+	}
+
+	// Also load .git/info/exclude (local git excludes, lower priority than .gitignore)
+	excludePath := filepath.Join(root, ".git", "info", "exclude")
+	if err := m.loadFile(excludePath); err != nil {
+		// might not exist
+	}
+
+	return m, nil
+}
+
+// loadFile loads gitignore patterns from a file.
+func (m *gitignoreMatcher) loadFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), " \t")
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Handle negation
+		negate := false
+		if strings.HasPrefix(line, "!") {
+			negate = true
+			line = line[1:]
+		}
+
+		// Directory-only pattern (ends with /)
+		dirOnly := false
+		if strings.HasSuffix(line, "/") {
+			dirOnly = true
+			line = strings.TrimSuffix(line, "/")
+		}
+
+		// Remove trailing whitespace for non-negated patterns
+		line = strings.TrimRight(line, " ")
+
+		// Skip empty lines after processing
+		if line == "" {
+			continue
+		}
+
+		m.rules = append(m.rules, gitignorePattern{
+			pattern:  line,
+			negate:   negate,
+			dirOnly:  dirOnly,
+		})
+	}
+	return scanner.Err()
+}
+
+// Child returns a new matcher for a subdirectory, inheriting parent rules.
+func (m *gitignoreMatcher) Child(subdir string) (*gitignoreMatcher, error) {
+	childPath := filepath.Join(m.dir, subdir)
+	return newGitignoreMatcher(childPath, m)
+}
+
+// IsIgnored returns true if the given relative path (to the matcher's root) should be ignored.
+// It checks all patterns in the matcher chain (parent to child), with later rules taking precedence.
+// For files, it also checks whether any parent directory is ignored (gitignore behavior).
+func (m *gitignoreMatcher) IsIgnored(relPath string, isDir bool) bool {
+	// Check if the path itself is ignored
+	if m.isIgnoredByRule(relPath, isDir) {
+		return true
+	}
+
+	// For files, also check if any parent directory is ignored
+	// (if a directory is ignored, all its contents are ignored)
+	if !isDir {
+		parts := strings.Split(filepath.ToSlash(relPath), "/")
+		for i := len(parts) - 1; i > 0; i-- {
+			parent := strings.Join(parts[:i], "/")
+			if m.isIgnoredByRule(parent, true) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// isIgnoredByRule checks if a path matches any rule (without checking parent directories).
+func (m *gitignoreMatcher) isIgnoredByRule(relPath string, isDir bool) bool {
+	var rules []gitignorePattern
+
+	// Collect rules from parent chain (parent rules first, then current)
+	var chain []*gitignoreMatcher
+	for cur := m; cur != nil; cur = cur.parent {
+		chain = append([]*gitignoreMatcher{cur}, chain...)
+	}
+	for _, matcher := range chain {
+		rules = append(rules, matcher.rules...)
+	}
+
+	matched := false
+	for _, rule := range rules {
+		if rule.dirOnly && !isDir {
+			continue
+		}
+		if matchPattern(relPath, rule.pattern) {
+			matched = !rule.negate
+		}
+	}
+	return matched
+}
+
+// matchPattern checks if a path matches a gitignore pattern.
+// This implements a subset of gitignore pattern matching.
+func matchPattern(path, pattern string) bool {
+	// Normalize path separators
+	path = filepath.ToSlash(path)
+	pattern = filepath.ToSlash(pattern)
+
+	// Handle anchored patterns (starting with /)
+	anchored := false
+	if strings.HasPrefix(pattern, "/") {
+		anchored = true
+		pattern = pattern[1:]
+	}
+
+	// Handle trailing /**
+	hasTrailingGlob := false
+	if strings.HasSuffix(pattern, "/**") {
+		hasTrailingGlob = true
+		pattern = strings.TrimSuffix(pattern, "/**")
+	}
+
+	// Handle ** in the middle of patterns
+	// Split by /** and check each segment
+	segments := strings.Split(pattern, "**")
+
+	if len(segments) == 1 {
+		// No ** in pattern, do exact or glob matching
+		if anchored {
+			// Anchored: pattern must match from the beginning of the path
+			if hasTrailingGlob {
+				return strings.HasPrefix(path, segments[0])
+			}
+			return path == segments[0]
+		}
+		// Not anchored: pattern can match anywhere in the path
+		if hasTrailingGlob {
+			return strings.HasPrefix(path, segments[0]) || strings.Contains(path, "/"+segments[0])
+		}
+		return matchGlob(path, segments[0])
+	}
+
+	// Pattern contains **
+	// Check if path starts with the prefix before first **
+	prefix := segments[0]
+	if prefix != "" {
+		if anchored {
+			if !strings.HasPrefix(path, prefix) {
+				return false
+			}
+			path = path[len(prefix):]
+		} else {
+			idx := strings.Index(path, prefix)
+			if idx == -1 {
+				return false
+			}
+			path = path[idx:]
+		}
+	}
+
+	// Check remaining segments
+	for i := 1; i < len(segments); i++ {
+		segment := segments[i]
+		if segment == "" {
+			continue
+		}
+		// Find this segment in path (can span directories)
+		if hasTrailingGlob && i == len(segments)-1 {
+			// Last segment with trailing /** matches rest of path
+			return true
+		}
+		idx := strings.Index(path, segment)
+		if idx == -1 {
+			return false
+		}
+		path = path[idx+len(segment):]
+	}
+
+	return true
+}
+
+// matchGlob does simple glob matching with * (matches anything except /).
+func matchGlob(path, pattern string) bool {
+	// Simple case: no wildcards
+	if !strings.ContainsAny(pattern, "*?") {
+		return path == pattern
+	}
+
+	// Convert pattern to regex
+	re := ""
+	for _, c := range pattern {
+		switch c {
+		case '*':
+			re += "[^/]*"
+		case '?':
+			re += "[^/]"
+		case '.', '(', ')', '+', '{', '}', '|', '^', '$', '\\', '[', ']':
+			re += "\\" + string(c)
+		default:
+			re += string(c)
+		}
+	}
+
+	// Simple regex matching for the path
+	// Match full path or just filename portion
+	matched, _ := matchRegexp("^" + re + "$", path)
+	if matched {
+		return true
+	}
+	matched2, _ := matchRegexp("^.*/" + re + "$", path)
+	return matched2
+}
+
+func matchRegexp(pattern, text string) (bool, error) {
+	// Simple regexp implementation for our specific case
+	// We just check if pattern matches text exactly
+	pi := 0
+	ti := 0
+	starIdx := -1
+	tStarIdx := -1
+
+	for pi < len(pattern) && ti < len(text) {
+		pc := pattern[pi]
+		tc := text[ti]
+
+		if pc == '*' {
+			starIdx = pi
+			tStarIdx = ti
+			pi++
+		} else if pc == tc || pc == '?' {
+			pi++
+			ti++
+		} else if starIdx != -1 {
+			pi = starIdx + 1
+			ti = tStarIdx + 1
+			tStarIdx = ti
+		} else {
+			return false, nil
+		}
+	}
+
+	// Handle trailing *
+	for pi < len(pattern) && pattern[pi] == '*' {
+		pi++
+	}
+
+	return pi == len(pattern) && ti == len(text), nil
+}
+
+// isIgnoredDir returns true for directory names that should never be traversed.
+func isIgnoredDir(path string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == "node_modules" || part == "dist" || part == "build" ||
+			part == ".git" || part == "vendor" || part == "__pycache__" ||
+			part == ".vite" || part == ".next" || part == ".nuxt" ||
+			part == "target" || part == ".cache" || part == ".turbo" {
+			return true
+		}
+	}
+	return false
+}
+
+// isInIgnoredPath returns true if any path component is an ignored directory.
+func isInIgnoredPath(path string) bool {
+	return isIgnoredDir(path)
 }
 
 func escapeGitHubPath(path string) string {
