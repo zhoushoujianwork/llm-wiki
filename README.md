@@ -63,25 +63,48 @@ llm-wiki ask
 
 ## Configuration
 
-Create `llm-wiki.yaml` in the skill directory or current folder:
+### Default Paths (Privacy-First)
+
+By default, llm-wiki outputs to **user's private directory** to protect your personal wiki:
+
+```
+~/.llm-wiki/
+  ├── wiki/           # LLM-generated wiki pages (private)
+  ├── sources/        # Cloned repos cache (private)
+  └── llm-wiki.yaml   # Your config file
+```
+
+This ensures your compiled knowledge base stays private and won't be accidentally committed to GitHub.
+
+### Custom Configuration
+
+Create `llm-wiki.yaml` to override defaults:
 
 ```yaml
-# LLM Provider (any Anthropic API compatible provider)
-anthropic_base_url: "https://api.minimaxi.com/anthropic/v1/messages"
+# LLM Provider (Anthropic API compatible)
+anthropic_base_url: "https://api.anthropic.com/v1/messages"
 anthropic_api_key: "your-api-key"
-anthropic_model: "MiniMax-M2.7"
+anthropic_model: "claude-3-5-sonnet-20241022"
 
-# Directories
-wiki_dir: ./wiki
-sources_dir: ./sources
+# Directories (optional, defaults shown above)
+wiki_dir: ~/.llm-wiki/wiki
+sources_dir: ~/.llm-wiki/sources
 ```
+
+Config file locations (searched in order):
+1. `--config` flag
+2. `./llm-wiki.yaml` (current directory)
+3. `~/.llm-wiki/llm-wiki.yaml`
+4. `~/.openclaw/workspace/skills/llm-wiki/llm-wiki.yaml`
 
 Or use environment variables:
 
 ```bash
 export ANTHROPIC_API_KEY=your-key
-export ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic/v1/messages
-export ANTHROPIC_MODEL=MiniMax-M2.7
+export ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
+export ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+export LLM_WIKI_DIR=/custom/wiki/path
+export LLM_WIKI_SOURCES_DIR=/custom/sources/path
 ```
 
 ## CLI Commands
@@ -109,6 +132,23 @@ internal/
   query/             # Query processing and answering
   index/             # Concept/entity to page mapping
   llm/               # Anthropic API client
+```
+
+## OpenClaw Skill Installation
+
+LLM Wiki can be installed as an [OpenClaw](https://github.com/openclaw/openclaw) skill for AI agent usage.
+
+See [docs/SKILL_INSTALLATION.md](docs/SKILL_INSTALLATION.md) for detailed installation guide.
+
+Quick install:
+
+```bash
+# Build and install
+go build -o llm-wiki ./cmd/llm-wiki
+sudo install -m 755 llm-wiki /usr/local/bin/llm-wiki
+
+# Create skill directory
+mkdir -p ~/.openclaw/workspace/skills/llm-wiki
 ```
 
 ## Why "Compilation"?

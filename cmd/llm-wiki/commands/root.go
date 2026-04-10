@@ -141,7 +141,9 @@ func getWikiDir() string {
 	if cfg := autoLoadConfig(); cfg != nil && cfg.WikiDir != "" {
 		return cfg.WikiDir
 	}
-	return "."
+	// Default: user's private directory (not in repo)
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".llm-wiki", "wiki")
 }
 
 func getSourcesDir() string {
@@ -151,5 +153,7 @@ func getSourcesDir() string {
 	if cfg := autoLoadConfig(); cfg != nil && cfg.SourcesDir != "" {
 		return cfg.SourcesDir
 	}
-	return "./sources"
+	// Default: user's private directory (not in repo)
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".llm-wiki", "sources")
 }
