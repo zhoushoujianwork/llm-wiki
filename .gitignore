@@ -6,18 +6,21 @@ llm-wiki.exe
 # Build output
 dist/
 
-# VitePress frontend (generated at runtime)
-wiki/llm-wiki
+# VitePress frontend (committable - part of the repo)
+# These are kept: wiki/.vitepress/config.ts, wiki/index.md, wiki/package.json
 wiki/node_modules/
 wiki/.vitepress/cache/
 wiki/.vitepress/dist/
 
 # Compiled wiki content (user-specific, generated at runtime)
-wiki/bbclaw/
+# Default output is ~/.llm-wiki/wiki/ (private, not in repo)
+# But if user runs in repo directory, ignore generated content:
+wiki/**/!(*.yaml|*.ts|*.json|index.md)
 wiki/.compiled.json
 wiki/llm-wiki-test/
 
 # Sources cache (cloned repos)
+# Default: ~/.llm-wiki/sources/ (private)
 sources/
 
 # Environment
