@@ -49,6 +49,37 @@ llm-wiki source add <local-path>   # Local directory
 llm-wiki source add <url>          # URL to scrape
 ```
 
+## ClawFlow — Issue → PR Automation
+
+This repo participates in **ClawFlow**, the OpenClaw automated issue → PR pipeline.
+
+### How it works
+
+1. Owner creates a GitHub issue and applies the `ready-for-agent` label
+2. OpenClaw cron agent picks it up, evaluates confidence
+3. If confidence ≥ 7/10, spawns a sub-agent to fix the issue
+4. Sub-agent creates a branch, implements the fix, opens a PR
+5. PR link is sent back to the owner
+
+### Labels
+
+| Label | Who sets | Meaning |
+|-------|---------|---------|
+| `ready-for-agent` | **Owner only** | Triggers ClawFlow收割 |
+| `bug` | Owner or agent | Bug report |
+| `enhancement` | Owner or agent | Feature request |
+| `in-progress` | Agent | Work in progress |
+
+### Constraint
+
+- **Do NOT apply `ready-for-agent` yourself** — only the repo owner sets this tag
+- You may evaluate issues and report confidence, but the actual tagging is owner-only
+
+### Skills
+
+- Skill definition: `~/.openclaw/workspace/skills/llm-wiki/SKILL.md`
+- Full ClawFlow docs: `~/.openclaw/workspace/ClawFlow.md`
+
 ## Compilation Modes
 
 - `full`: Re-compile everything, overwrite existing pages
