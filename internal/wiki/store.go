@@ -21,7 +21,8 @@ func safeWalkSkip(path string, info os.FileInfo, err error) (bool, error) {
 	}
 	if info.IsDir() {
 		// Skip hidden directories (starting with .)
-		if strings.HasPrefix(info.Name(), ".") {
+		parts := strings.Split(path, string(filepath.Separator))
+		if len(parts) > 0 && strings.HasPrefix(parts[len(parts)-1], ".") {
 			return false, filepath.SkipDir
 		}
 	}

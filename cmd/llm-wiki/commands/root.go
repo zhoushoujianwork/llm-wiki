@@ -130,6 +130,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(NewQueryCmd())
 	root.AddCommand(NewAskCmd())
 	root.AddCommand(NewVersionCmd())
+	root.AddCommand(NewConflictsCmd())
 
 	return root
 }
