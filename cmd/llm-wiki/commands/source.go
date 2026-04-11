@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/zhoushoujianwork/llm-wiki/internal/source"
+	"llm-wiki/internal/source"
 )
 
 func NewSourceCmd() *cobra.Command {

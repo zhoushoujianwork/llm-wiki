@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/zhoushoujianwork/llm-wiki/cmd/llm-wiki/commands"
+	"llm-wiki/cmd/llm-wiki/commands"
 )
 
 func main() {

@@ -131,6 +131,9 @@ func NewManagerWithAllDeps(cacheDir string, detector *conflicts.ConflictDetector
 		m.wikiStore = store
 	}
 
+	// Load existing tasks from disk
+	m.loadTasks()
+
 	return m
 }
 
@@ -578,7 +581,12 @@ func (m *Manager) loadTasks() error {
 	data, err := os.ReadFile(tasksFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			// No existing tasks - create default tasks
+			defaultTasks := CreateDefaultTasks()
+			for _, task := range defaultTasks {
+				m.tasks[task.ID] = task
+			}
+			return m.saveTasks()
 		}
 		return fmt.Errorf("failed to read tasks file: %w", err)
 	}

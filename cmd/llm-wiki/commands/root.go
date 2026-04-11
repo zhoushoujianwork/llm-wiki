@@ -143,21 +143,6 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(NewFeedbackCmd())
 }
 
-	return root
-}
-
-func registerCommands(root *cobra.Command) {
-	root.AddCommand(NewSourceCmd())
-	root.AddCommand(NewCompileCmd())
-	root.AddCommand(NewQueryCmd())
-	root.AddCommand(NewAskCmd())
-	root.AddCommand(NewVersionCmd())
-	root.AddCommand(NewCheckConflictsCmd())
-	root.AddCommand(NewQualityCmd())
-	root.AddCommand(NewScheduleCmd())
-	root.AddCommand(NewFeedbackCmd())
-}
-
 func getWikiDir() string {
 	if dir := os.Getenv("LLM_WIKI_DIR"); dir != "" {
 		return dir

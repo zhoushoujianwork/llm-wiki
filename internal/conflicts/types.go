@@ -1,84 +1,127 @@
-// Package conflicts provides conflict detection for wiki pages.
+// Package conflicts provides formatting utilities for conflict reports.
 package conflicts
 
 import (
-	"time"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
-// ConflictType represents the kind of conflict detected.
-type ConflictType string
+// FormatText formats conflicts as a text table.
+func FormatText(report *Report) string {
+	var sb strings.Builder
 
-const (
-	// ContradictoryContent - Two pages make contradictory claims about the same topic
-	ContradictoryContent ConflictType = "contradictory_content"
+	sb.WriteString(fmt.Sprintf("Conflict Detection Report\n"))
+	sb.WriteString(fmt.Sprintf("=========================\n"))
+	sb.WriteString(fmt.Sprintf("\nGenerated: %s\n", report.Timestamp.Format("2006-01-02 15:04:05")))
+	sb.WriteString(fmt.Sprintf("Total Pages Scanned: %d\n", report.TotalPages))
+	sb.WriteString(fmt.Sprintf("Total Entities Checked: %d\n", report.TotalEntities))
+	sb.WriteString(fmt.Sprintf("Conflicts Found: %d\n\n", len(report.Conflicts)))
 
-	// DuplicateEntity - Same entity described differently across pages
-	DuplicateEntity ConflictType = "duplicate_entity"
+	if len(report.Conflicts) == 0 {
+		sb.WriteString("No conflicts detected!\n")
+		return sb.String()
+	}
 
-	// InconsistentReference - Page references another page that doesn't exist
-	InconsistentReference ConflictType = "inconsistent_reference"
+	sb.WriteString("Conflicts:\n")
+	sb.WriteString("──────────\n")
+	for i, c := range report.Conflicts {
+		sb.WriteString(fmt.Sprintf("\n%d. Entity: %s\n", i+1, c.EntityName))
+		sb.WriteString(fmt.Sprintf("   Confidence: %.1f%% (%s)\n", c.Confidence*100, formatConfidenceLevel(c.Confidence)))
+		sb.WriteString(fmt.Sprintf("   Recommendation: %s\n", c.Recommendation))
+		sb.WriteString(fmt.Sprintf("   Page A: %s\n", c.PageA))
+		sb.WriteString(fmt.Sprintf("     Statement: %s\n", truncateAndEllipsis(c.StatementA, 100)))
+		sb.WriteString(fmt.Sprintf("   Page B: %s\n", c.PageB))
+		sb.WriteString(fmt.Sprintf("     Statement: %s\n", truncateAndEllipsis(c.StatementB, 100)))
+	}
 
-	// CircularDependency - Pages form a circular reference chain
-	CircularDependency ConflictType = "circular_dependency"
+	sb.WriteString("\n\nSummary:\n")
+	sb.WriteString("────────\n")
+	sb.WriteString(fmt.Sprintf("• High confidence (≥80%%): %d\n", report.Summary.HighConfidence))
+	sb.WriteString(fmt.Sprintf("• Medium confidence (50-80%%): %d\n", report.Summary.MediumConfidence))
+	sb.WriteString(fmt.Sprintf("• Low confidence (<50%%): %d\n", report.Summary.LowConfidence))
+	sb.WriteString(fmt.Sprintf("• Total samples checked: %d\n", report.Summary.SamplesChecked))
+	sb.WriteString(fmt.Sprintf("• Analysis duration: %s\n", report.Summary.Duration))
 
-	// OutdatedInformation - Page content appears outdated based on compilation date
-	OutdatedInformation ConflictType = "outdated_information"
-)
-
-// SeverityLevel indicates how critical a conflict is.
-type SeverityLevel string
-
-const (
-	SeverityLow    SeverityLevel = "low"
-	SeverityMedium SeverityLevel = "medium"
-	SeverityHigh   SeverityLevel = "high"
-)
-
-// Conflict represents a detected issue in the wiki.
-type Conflict struct {
-	ID            string          `json:"id"`
-	Type          ConflictType    `json:"type"`
-	Severity      SeverityLevel   `json:"severity"`
-	Title         string          `json:"title"`
-	Description   string          `json:"description"`
-	Pages         []ConflictPage  `json:"pages"`
-	Evidence      []EvidenceItem  `json:"evidence"`
-	CreatedAt     time.Time       `json:"created_at"`
-	Confidence    float64         `json:"confidence"` // 0.0 to 1.0
-	Resolved      bool            `json:"resolved"`
-	Resolution    string          `json:"resolution,omitempty"`
+	return sb.String()
 }
 
-// ConflictPage identifies a specific page involved in a conflict.
-type ConflictPage struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Snippet   string `json:"snippet,omitempty"`
+// FormatMarkdown formats conflicts as markdown table.
+func FormatMarkdown(report *Report) string {
+	var sb strings.Builder
+
+	sb.WriteString("# Conflict Detection Report\n\n")
+	sb.WriteString(fmt.Sprintf("**Generated**: %s\n\n", report.Timestamp.Format("2006-01-02 15:04:05")))
+	sb.WriteString(fmt.Sprintf("**Total Pages**: %d | **Total Entities**: %d | **Conflicts Found**: %d\n\n",
+		report.TotalPages, report.TotalEntities, len(report.Conflicts)))
+
+	if len(report.Conflicts) == 0 {
+		sb.WriteString("✅ No conflicts detected! All wiki pages are consistent.\n\n")
+		return sb.String()
+	}
+
+	sb.WriteString("## Conflicts Detected\n\n")
+	sb.WriteString("| # | Entity | Confidence | Page A | Page B |\n")
+	sb.WriteString("|---|--------|------------|--------|--------|\n")
+
+	for i, c := range report.Conflicts {
+		sb.WriteString(fmt.Sprintf("%d | **%s** | %.1f%% | `%s` | `%s` |\n",
+			i+1, c.EntityName, c.Confidence*100, truncateAndEllipsis(filepath.Base(c.PageA), 30),
+			truncateAndEllipsis(filepath.Base(c.PageB), 30)))
+	}
+
+	sb.WriteString("\n## Summary\n\n")
+	sb.WriteString("- **High Confidence (≥80%)**: " + fmt.Sprintf("%d", report.Summary.HighConfidence) + "\n")
+	sb.WriteString("- **Medium Confidence (50-80%)**: " + fmt.Sprintf("%d", report.Summary.MediumConfidence) + "\n")
+	sb.WriteString("- **Low Confidence (<50%)**: " + fmt.Sprintf("%d", report.Summary.LowConfidence) + "\n")
+	sb.WriteString("- **Analysis Duration**: " + report.Summary.Duration + "\n")
+
+	return sb.String()
 }
 
-// EvidenceItem contains supporting evidence for a conflict.
-type EvidenceItem struct {
-	Type        string            `json:"type"` // "quote", "comparison", "analysis"
-	Description string            `json:"description"`
-	Text        string            `json:"text,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+// FormatJSON returns the report as JSON.
+func FormatJSON(report *Report) ([]byte, error) {
+	return json.MarshalIndent(report, "", "  ")
 }
 
-// Report represents a complete conflict detection report.
-type Report struct {
-	GeneratedAt     time.Time  `json:"generated_at"`
-	TotalPages      int        `json:"total_pages"`
-	Conflicts       []Conflict `json:"conflicts"`
-	Summary         Summary    `json:"summary"`
-	Recommendations []string   `json:"recommendations"`
+// SaveAsFile writes the report to a file in the specified format.
+func SaveAsFile(report *Report, path string, format string) error {
+	var data []byte
+	var err error
+
+	switch strings.ToLower(format) {
+	case "json":
+		data, err = FormatJSON(report)
+	case "markdown", "md":
+		markdown := FormatMarkdown(report)
+		data = []byte(markdown)
+	default:
+		text := FormatText(report)
+		data = []byte(text)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to format report: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
 }
 
-// Summary provides high-level statistics about the report.
-type Summary struct {
-	TotalConflicts  int                  `json:"total_conflicts"`
-	ByType          map[ConflictType]int `json:"by_type"`
-	BySeverity      map[SeverityLevel]int `json:"by_severity"`
-	HighestPriority ConflictType         `json:"highest_priority"`
-	RequiresImmediate int               `json:"requires_immediate"` // High severity count
+// Helper functions
+
+func formatConfidenceLevel(confidence float64) string {
+	if confidence >= 0.8 {
+		return "high"
+	} else if confidence >= 0.5 {
+		return "medium"
+	}
+	return "low"
 }
+
+// truncateAndEllipsis is exported from conflicts.go for use here

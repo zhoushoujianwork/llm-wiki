@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zhoushoujianwork/llm-wiki/internal/wiki"
+	"llm-wiki/internal/wiki"
 )
 
 // KnowledgeGraph maintains a mapping from concepts/entities to wiki pages with metadata.

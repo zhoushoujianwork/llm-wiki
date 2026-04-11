@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/zhoushoujianwork/llm-wiki/internal/query"
-	"github.com/zhoushoujianwork/llm-wiki/internal/wiki"
+	"llm-wiki/internal/query"
+	"llm-wiki/internal/wiki"
 )
 
 func NewQueryCmd() *cobra.Command {

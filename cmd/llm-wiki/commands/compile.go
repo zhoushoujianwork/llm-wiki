@@ -3,9 +3,9 @@ package commands
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/zhoushoujianwork/llm-wiki/internal/compiler"
-	"github.com/zhoushoujianwork/llm-wiki/internal/source"
-	"github.com/zhoushoujianwork/llm-wiki/internal/wiki"
+	"llm-wiki/internal/compiler"
+	"llm-wiki/internal/source"
+	"llm-wiki/internal/wiki"
 )
 
 func NewCompileCmd() *cobra.Command {

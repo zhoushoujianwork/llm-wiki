@@ -7,77 +7,92 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/zhoushoujianwork/llm-wiki/internal/conflicts"
-	"github.com/zhoushoujianwork/llm-wiki/internal/index"
-	"github.com/zhoushoujianwork/llm-wiki/internal/wiki"
+	"llm-wiki/internal/conflicts"
 )
 
-func NewConflictsCmd() *cobra.Command {
+func NewCheckConflictsCmd() *cobra.Command {
 	var outputFormat string
 	var outputPath string
+	var useCache bool
 
 	cmd := &cobra.Command{
-		Use:   "conflicts",
-		Short: "Detect conflicts between wiki pages",
-		Long: `Detect and report conflicts, inconsistencies, and other quality issues 
-in the wiki documentation. This includes:
+		Use:   "check-conflicts",
+		Short: "Detect semantic conflicts across wiki pages",
+		Long: `Analyze all wiki pages to detect semantic conflicts and inconsistencies.
+Uses LLM-powered analysis to find contradictions between pages about the same entities.
 
-- Contradictory content between pages
-- Duplicate or overlapping information  
-- Broken or missing references
-- Circular dependencies
-
-The tool scans all wiki pages and produces a detailed report with recommendations.`,
+Examples:
+  llm-wiki check-conflicts                                    # Run full conflict detection
+  llm-wiki check-conflicts --cache                           # Use cached results if available
+  llm-wiki check-conflicts --output json                     # Output as JSON
+  llm-wiki check-conflicts --output markdown                 # Output as Markdown table
+  llm-wiki check-conflicts -o report.md                      # Save to file`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Use getWikiDir() like other commands
+			ctx := context.Background()
+			
 			wikiDir := getWikiDir()
 			if wikiDir == "" {
 				return fmt.Errorf("wiki directory not configured")
 			}
 
-			store := wiki.NewStore(wikiDir)
-			
-			// Build knowledge graph for semantic analysis
-			ctx := context.Background()
-			kg, err := index.LoadOrCreateKnowledgeGraph(ctx, store, "")
-			if err != nil {
-				return fmt.Errorf("failed to build knowledge graph: %w", err)
-			}
-			
-			// Create detector with knowledge graph support
-			detector := conflicts.NewDetectorWithKG(store, kg)
+			detector := createConflictDetector(wikiDir)
 
-			report, err := detector.DetectAll(ctx)
-			if err != nil {
-				return fmt.Errorf("error detecting conflicts: %w", err)
+			// Get or run conflict detection
+			var report *conflicts.Report
+			var err error
+
+			if useCache {
+				report, err = detector.GetCachedResults()
+				if err != nil {
+					fmt.Println("No cached results found. Running full scan...")
+					report, err = detector.ScanAllPages(ctx)
+					if err != nil {
+						return fmt.Errorf("error detecting conflicts: %w", err)
+					}
+				} else {
+					fmt.Println("Using cached conflict detection results")
+				}
+			} else {
+				report, err = detector.ScanAllPages(ctx)
+				if err != nil {
+					return fmt.Errorf("error detecting conflicts: %w", err)
+				}
 			}
 
+			// Format and display output
 			switch outputFormat {
-			case "table":
-				fmt.Print(conflicts.FormatTable(report))
 			case "json":
 				data, err := conflicts.FormatJSON(report)
 				if err != nil {
 					return err
 				}
 				fmt.Println(string(data))
+			case "markdown", "md":
+				markdown := conflicts.FormatMarkdown(report)
+				fmt.Println(markdown)
 			default:
-				return fmt.Errorf("unsupported output format: %s (use table or json)", outputFormat)
+				text := conflicts.FormatText(report)
+				fmt.Println(text)
 			}
 
+			// Save if requested
 			if outputPath != "" {
-				if err := conflicts.Save(report, outputPath); err != nil {
+				if err := conflicts.SaveAsFile(report, outputPath, outputFormat); err != nil {
 					return fmt.Errorf("failed to save report: %w", err)
 				}
-				fmt.Printf("\nReport saved to %s\n", outputPath)
+				fmt.Printf("\n✓ Report saved to %s\n", outputPath)
 			}
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "Output format (table, json)")
-	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Save report to file (JSON format)")
+	cmd.Flags().StringVarP(&outputFormat, "output", "o", "text", 
+		"Output format: text, json, markdown (default: text)")
+	cmd.Flags().StringVarP(&outputPath, "save", "s", "", 
+		"Save report to file (requires -o format)")
+	cmd.Flags().BoolVarP(&useCache, "cache", "c", false, 
+		"Use cached results if available")
 
 	return cmd
 }
