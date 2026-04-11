@@ -125,14 +125,37 @@ func NewRootCmd() *cobra.Command {
 
 	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 
+	// Register all commands
+	registerCommands(root)
+
+	return root
+}
+
+func registerCommands(root *cobra.Command) {
 	root.AddCommand(NewSourceCmd())
 	root.AddCommand(NewCompileCmd())
 	root.AddCommand(NewQueryCmd())
 	root.AddCommand(NewAskCmd())
 	root.AddCommand(NewVersionCmd())
-	root.AddCommand(NewConflictsCmd())
+	root.AddCommand(NewCheckConflictsCmd())
+	root.AddCommand(NewQualityCmd())
+	root.AddCommand(NewScheduleCmd())
+	root.AddCommand(NewFeedbackCmd())
+}
 
 	return root
+}
+
+func registerCommands(root *cobra.Command) {
+	root.AddCommand(NewSourceCmd())
+	root.AddCommand(NewCompileCmd())
+	root.AddCommand(NewQueryCmd())
+	root.AddCommand(NewAskCmd())
+	root.AddCommand(NewVersionCmd())
+	root.AddCommand(NewCheckConflictsCmd())
+	root.AddCommand(NewQualityCmd())
+	root.AddCommand(NewScheduleCmd())
+	root.AddCommand(NewFeedbackCmd())
 }
 
 func getWikiDir() string {

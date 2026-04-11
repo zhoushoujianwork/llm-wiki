@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zhoushoujianwork/llm-wiki/internal/llm"
-	"github.com/zhoushoujianwork/llm-wiki/internal/wiki"
+	"llm-wiki/internal/llm"
+	"llm-wiki/internal/wiki"
 )
 
 const (
