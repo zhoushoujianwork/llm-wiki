@@ -7,14 +7,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zhoushoujianwork/llm-wiki/internal/llm"
-	"github.com/zhoushoujianwork/llm-wiki/internal/source"
-	"github.com/zhoushoujianwork/llm-wiki/internal/wiki"
+	"llm-wiki/internal/llm"
+	"llm-wiki/internal/source"
+	"llm-wiki/internal/wiki"
 )
 
 // Compiler handles LLM-powered document compilation.
 type Compiler struct {
-	client *llm.AnthropicClient
+	client llm.Client
 }
 
 type compilationResponse struct {
@@ -42,18 +42,15 @@ func (c *Compiler) CompileDocument(doc source.Document) ([]wiki.Page, error) {
 		return nil, fmt.Errorf("failed to read document: %w", err)
 	}
 
-	req := llm.MessageRequest{
-		System: compilationSystemPrompt,
-		User:   buildCompilationPrompt(doc, string(content)),
-	}
+	prompt := buildCompilationPrompt(doc, string(content))
 
-	resp, err := c.client.Message(context.Background(), req)
+	resp, err := c.client.Generate(context.Background(), prompt)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic compilation request failed: %w", err)
+		return nil, fmt.Errorf("LLM compilation request failed: %w", err)
 	}
 
 	var parsed compilationResponse
-	if err := llm.UnmarshalJSONObject(resp.Text, &parsed); err != nil {
+	if err := llm.UnmarshalJSONObject(resp, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse compilation response: %w", err)
 	}
 
@@ -289,6 +286,3 @@ func pathSlug(path string) string {
 	}
 	return name
 }
-
-const compilationSystemPrompt = `You transform source documents into structured wiki compilation metadata.
-Return strict JSON only. Do not wrap the response in Markdown fences.`

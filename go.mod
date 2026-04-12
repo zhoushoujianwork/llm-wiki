@@ -1,4 +1,4 @@
-module github.com/zhoushoujianwork/llm-wiki
+module llm-wiki
 
 go 1.22.0
 

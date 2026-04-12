@@ -147,6 +147,26 @@ func (c *AnthropicClient) Message(ctx context.Context, req MessageRequest) (*Mes
 	return &MessageResponse{Text: strings.TrimSpace(strings.Join(textParts, "\n"))}, nil
 }
 
+// Generate sends a prompt and returns the response text - implements llm.Client interface.
+func (c *AnthropicClient) Generate(ctx context.Context, prompt string) (string, error) {
+	if c.apiKey == "" {
+		return "", fmt.Errorf("ANTHROPIC_API_KEY is not set")
+	}
+
+	req := MessageRequest{
+		User:        prompt,
+		MaxTokens:   2048,
+		Temperature: 0.7,
+	}
+
+	resp, err := c.Message(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Text, nil
+}
+
 // UnmarshalJSONObject extracts the first JSON object from a model response.
 func UnmarshalJSONObject(raw string, target any) error {
 	candidate := strings.TrimSpace(raw)
