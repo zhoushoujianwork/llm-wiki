@@ -104,13 +104,13 @@ func NewRootCmd() *cobra.Command {
 		Short: "LLM Wiki — Build a personal Wikipedia with LLMs",
 		Long:  `Feed documents in, get a searchable wiki out. Supports GitHub repos, local files, and URLs.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-				homeDir, _ := os.UserHomeDir()
-				configPaths := []string{
-					cfgFile,
-					"llm-wiki.yaml",
-					filepath.Join(homeDir, ".llm-wiki", "llm-wiki.yaml"),
-					filepath.Join(homeDir, ".openclaw", "workspace", "skills", "llm-wiki", "llm-wiki.yaml"),
-				}
+			homeDir, _ := os.UserHomeDir()
+			configPaths := []string{
+				cfgFile,
+				"llm-wiki.yaml",
+				filepath.Join(homeDir, ".llm-wiki", "llm-wiki.yaml"),
+				filepath.Join(homeDir, ".openclaw", "workspace", "skills", "llm-wiki", "llm-wiki.yaml"),
+			}
 			for _, p := range configPaths {
 				if p == "" {
 					continue
@@ -142,6 +142,7 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(NewScheduleCmd())
 	root.AddCommand(NewFeedbackCmd())
 	root.AddCommand(NewInspectCmd())
+	root.AddCommand(NewMergeConceptsCmd())
 }
 
 func getWikiDir() string {
