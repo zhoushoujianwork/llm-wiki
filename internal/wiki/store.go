@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zhoushoujianwork/llm-wiki/internal/source"
+	"llm-wiki/internal/source"
 )
 
 const compiledStateFilename = ".compiled.json"
@@ -21,7 +21,8 @@ func safeWalkSkip(path string, info os.FileInfo, err error) (bool, error) {
 	}
 	if info.IsDir() {
 		// Skip hidden directories (starting with .)
-		if strings.HasPrefix(info.Name(), ".") {
+		parts := strings.Split(path, string(filepath.Separator))
+		if len(parts) > 0 && strings.HasPrefix(parts[len(parts)-1], ".") {
 			return false, filepath.SkipDir
 		}
 	}
@@ -254,6 +255,39 @@ func (s *Store) AllPages() ([]Page, error) {
 	})
 
 	return pages, err
+}
+
+// ListPages returns a list of all wiki page paths.
+func (s *Store) ListPages() ([]string, error) {
+	var pages []string
+	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
+		if skip, err := safeWalkSkip(path, info, err); skip {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		pages = append(pages, path)
+		return nil
+	})
+	return pages, err
+}
+
+// ReadPage reads the content of a wiki page.
+func (s *Store) ReadPage(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// GetEntities returns the concept → page index.
+func (s *Store) GetEntities() map[string][]string {
+	return s.index.Entries
 }
 
 func (s *Store) documentKey(namespace, relPath string) string {
