@@ -167,3 +167,36 @@ The LLM does the heavy lifting *before* the query, not during it.
 ## License
 
 Apache 2.0
+
+## MCP Server (Claude Desktop / Cursor)
+
+llm-wiki can run as an [MCP](https://modelcontextprotocol.io) server, exposing your wiki as live tools to any MCP-compatible AI client.
+
+### Start the server
+
+```bash
+llm-wiki serve --mcp
+```
+
+### Claude Desktop configuration
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "command": "llm-wiki",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. You will see three new tools available:
+
+| Tool | Description |
+|------|-------------|
+| `wiki_query` | Search pages relevant to a question |
+| `wiki_list_pages` | List all pages (optional namespace filter) |
+| `wiki_read_page` | Read a page's full content by path |
