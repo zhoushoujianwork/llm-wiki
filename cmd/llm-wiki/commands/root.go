@@ -141,6 +141,7 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(NewQualityCmd())
 	root.AddCommand(NewScheduleCmd())
 	root.AddCommand(NewFeedbackCmd())
+	root.AddCommand(NewInspectCmd())
 }
 
 func getWikiDir() string {
