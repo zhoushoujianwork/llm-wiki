@@ -144,6 +144,7 @@ func registerCommands(root *cobra.Command) {
 	root.AddCommand(NewInspectCmd())
 	root.AddCommand(NewMergeConceptsCmd())
 	root.AddCommand(NewServeCmd())
+	root.AddCommand(NewStatusCmd())
 }
 
 func getWikiDir() string {
