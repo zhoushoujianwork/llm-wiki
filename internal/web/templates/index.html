@@ -1,0 +1,21 @@
+{{template "base" .}}
+{{define "title"}}llm-wiki — Browse{{end}}
+{{define "content"}}
+<h1>Wiki Pages</h1>
+{{if not .Namespaces}}
+  <p class="no-results">No pages found. Run <code>llm-wiki compile</code> to generate wiki pages.</p>
+{{else}}
+  {{range .Namespaces}}
+  <h2>{{.Name}}</h2>
+  {{range .Pages}}
+  <div class="card">
+    <a href="/page/{{.Namespace}}/{{.Name}}">{{.Name}}</a>
+    {{if .Tags}}
+      {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
+    {{end}}
+    <div class="snippet">{{slice .Content 0 (min (len .Content) 160)}}…</div>
+  </div>
+  {{end}}
+  {{end}}
+{{end}}
+{{end}}

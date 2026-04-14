@@ -1,0 +1,21 @@
+{{template "base" .}}
+{{define "title"}}Search — llm-wiki{{end}}
+{{define "searchval"}}{{.Query}}{{end}}
+{{define "content"}}
+<h1>Search</h1>
+{{if .Query}}
+  <p style="margin-bottom:1rem;color:#6c757d">Results for <strong>{{.Query}}</strong></p>
+  {{if not .Results}}
+    <p class="no-results">No pages matched your query.</p>
+  {{else}}
+    {{range .Results}}
+    <div class="card">
+      <a href="/page/{{.Namespace}}/{{.Name}}">{{.Namespace}}/{{.Name}}</a>
+      <div class="snippet">{{slice .Content 0 (min (len .Content) 200)}}…</div>
+    </div>
+    {{end}}
+  {{end}}
+{{else}}
+  <p class="no-results">Enter a keyword above to search all wiki pages.</p>
+{{end}}
+{{end}}
