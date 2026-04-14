@@ -65,10 +65,17 @@ type AnthropicClient struct {
 
 // NewAnthropicClient constructs a client from environment configuration.
 func NewAnthropicClient() *AnthropicClient {
+	apiKey := firstNonEmpty(os.Getenv("ANTHROPIC_API_KEY"), os.Getenv("ANTHROPIC_AUTH_TOKEN"))
+	baseURL := os.Getenv("ANTHROPIC_BASE_URL")
+	if baseURL == "" {
+		baseURL = anthropicEndpoint
+	} else if !strings.HasSuffix(baseURL, "/messages") {
+		baseURL = strings.TrimRight(baseURL, "/") + "/v1/messages"
+	}
 	return &AnthropicClient{
-		apiKey:  strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
+		apiKey:  strings.TrimSpace(apiKey),
 		model:   firstNonEmpty(os.Getenv("ANTHROPIC_MODEL"), "claude-3-5-sonnet-latest"),
-		baseURL: firstNonEmpty(os.Getenv("ANTHROPIC_BASE_URL"), anthropicEndpoint),
+		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
@@ -78,7 +85,7 @@ func NewAnthropicClient() *AnthropicClient {
 // Message sends a single-turn prompt to Anthropic.
 func (c *AnthropicClient) Message(ctx context.Context, req MessageRequest) (*MessageResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY is not set")
+		return nil, fmt.Errorf("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is not set")
 	}
 
 	maxTokens := req.MaxTokens
@@ -150,7 +157,7 @@ func (c *AnthropicClient) Message(ctx context.Context, req MessageRequest) (*Mes
 // Generate sends a prompt and returns the response text - implements llm.Client interface.
 func (c *AnthropicClient) Generate(ctx context.Context, prompt string) (string, error) {
 	if c.apiKey == "" {
-		return "", fmt.Errorf("ANTHROPIC_API_KEY is not set")
+		return "", fmt.Errorf("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is not set")
 	}
 
 	req := MessageRequest{
