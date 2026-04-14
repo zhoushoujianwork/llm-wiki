@@ -173,6 +173,8 @@ func (m *Manager) Remove(name string) error {
 	for _, s := range sources {
 		if s.Name != name {
 			remaining = append(remaining, s)
+		} else if s.Local != "" {
+			_ = os.RemoveAll(s.Local)
 		}
 	}
 	return m.saveSources(remaining)
