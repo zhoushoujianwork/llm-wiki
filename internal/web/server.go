@@ -21,7 +21,7 @@ var templateFS embed.FS
 type Server struct {
 	store *wiki.Store
 	mux   *http.ServeMux
-	tmpl  *template.Template
+	tmpls map[string]*template.Template
 }
 
 // NewServer creates a new web server backed by the given wiki store.
@@ -35,12 +35,18 @@ func NewServer(store *wiki.Store) (*Server, error) {
 			return b
 		},
 	}
-	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse templates: %w", err)
+
+	pages := []string{"index.html", "page.html", "search.html"}
+	tmpls := make(map[string]*template.Template, len(pages))
+	for _, name := range pages {
+		t, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/base.html", "templates/"+name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse template %s: %w", name, err)
+		}
+		tmpls[name] = t
 	}
 
-	s := &Server{store: store, mux: http.NewServeMux(), tmpl: tmpl}
+	s := &Server{store: store, mux: http.NewServeMux(), tmpls: tmpls}
 	s.mux.HandleFunc("/", s.handleIndex)
 	s.mux.HandleFunc("/page/", s.handlePage)
 	s.mux.HandleFunc("/search", s.handleSearch)
@@ -63,7 +69,7 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 
 func (s *Server) renderTemplate(w http.ResponseWriter, name string, data any) {
 	var buf bytes.Buffer
-	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+	if err := s.tmpls[name].ExecuteTemplate(&buf, "base", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
