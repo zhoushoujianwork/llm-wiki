@@ -17,7 +17,7 @@ const compiledStateFilename = ".compiled.json"
 func safeWalkSkip(path string, info os.FileInfo, err error) (bool, error) {
 	if err != nil {
 		// Skip permission denied or non-existent paths
-		return false, nil
+		return true, nil
 	}
 	if info.IsDir() {
 		// Skip hidden directories (starting with .)

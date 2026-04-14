@@ -48,6 +48,6 @@ func NewServeCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&mcpMode, "mcp", false, "Start MCP stdio server")
 	cmd.Flags().BoolVar(&webMode, "web", false, "Start local web UI server")
-	cmd.Flags().IntVar(&port, "port", 8080, "Port for the web UI server (used with --web)")
+	cmd.Flags().IntVar(&port, "port", 19876, "Port for the web UI server (used with --web)")
 	return cmd
 }
