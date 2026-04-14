@@ -1,4 +1,4 @@
-.PHONY: build install clean test lint fmt vet wiki-install wiki-kill-port wiki-dev wiki-build wiki-preview
+.PHONY: build install clean test lint fmt vet
 
 # Go parameters
 GOCMD=go
@@ -11,17 +11,21 @@ GOLINT=golangci-lint run
 
 # Binary name and path
 BINARY_NAME=llm-wiki
-BUILD_DIR=.
+BUILD_DIR=bin
 INSTALL_PATH=$(HOME)/go/bin/$(BINARY_NAME)
 
 # Build flags
-LDFLAGS=-ldflags "-s -w"
+VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS=-ldflags "-s -w -X llm-wiki/cmd/llm-wiki/commands.Version=$(VERSION)"
 
 # Default target
 all: build
 
 build:
+	mkdir -p $(BUILD_DIR)
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/llm-wiki
+	install -m 755 $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_PATH)
+	@echo "Installed $(BINARY_NAME) to $(INSTALL_PATH)"
 
 install: build
 	install -m 755 $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_PATH)
@@ -48,29 +52,6 @@ tidy:
 # Development helpers
 dev: tidy build
 	@echo "Built at $(BUILD_DIR)/$(BINARY_NAME)"
-
-# VitePress wiki UI — fixed port 5173 only (requires Node/npm in wiki/)
-WIKI_DIR := wiki
-WIKI_PORT := 5173
-
-wiki-install:
-	cd $(WIKI_DIR) && npm install
-
-# Kill whatever is listening on WIKI_PORT (e.g. old VitePress) so dev never hops to 5174/5175.
-wiki-kill-port:
-	@for pid in $$(lsof -ti :$(WIKI_PORT) 2>/dev/null); do \
-	  echo "Stopping PID $$pid on port $(WIKI_PORT)"; \
-	  kill $$pid 2>/dev/null || kill -9 $$pid 2>/dev/null; \
-	done
-
-wiki-dev: wiki-install wiki-kill-port
-	cd $(WIKI_DIR) && npm run dev -- --port $(WIKI_PORT) --strictPort
-
-wiki-build: wiki-install
-	cd $(WIKI_DIR) && npm run build
-
-wiki-preview: wiki-install
-	cd $(WIKI_DIR) && npm run preview
 
 # Build for multiple platforms
 build-all: tidy

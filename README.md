@@ -45,8 +45,8 @@ Inspired by Andrej Karpathy's [LLM Wiki concept](https://gist.github.com/karpath
 ## Quick Start
 
 ```bash
-# Install
-go install
+# Build & install to ~/go/bin (version injected from git tag)
+make build
 
 # Add a GitHub repo as source
 llm-wiki source add https://github.com/owner/repo
@@ -118,6 +118,21 @@ export LLM_WIKI_SOURCES_DIR=/custom/sources/path
 | `compile <source>` | Compile specific source only |
 | `query <question>` | Query the wiki (single shot) |
 | `ask` | Interactive query mode |
+
+## Release
+
+Releases are managed via git tags. Pushing a `v*` tag triggers GitHub Actions to cross-compile binaries for all platforms and publish a GitHub Release automatically.
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Binaries published per release:
+- `llm-wiki-linux-amd64`
+- `llm-wiki-darwin-arm64`
+- `llm-wiki-darwin-amd64`
+- `llm-wiki-windows-amd64.exe`
 
 ## Architecture
 
