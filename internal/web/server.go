@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -27,6 +28,12 @@ type Server struct {
 func NewServer(store *wiki.Store) (*Server, error) {
 	funcMap := template.FuncMap{
 		"renderLinks": renderWikiLinks,
+		"min": func(a, b int) int {
+			if a < b {
+				return a
+			}
+			return b
+		},
 	}
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
@@ -52,6 +59,16 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (s *Server) renderTemplate(w http.ResponseWriter, name string, data any) {
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 // --- handlers ---
@@ -86,10 +103,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		data.Namespaces = append(data.Namespaces, namespaceInfo{Name: ns, Pages: ps})
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	s.renderTemplate(w, "index.html", data)
 }
 
 type pageData struct {
@@ -122,10 +136,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 				HTML:      renderWikiLinks(p.Content),
 				Links:     p.Links,
 			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if err := s.tmpl.ExecuteTemplate(w, "page.html", data); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
+			s.renderTemplate(w, "page.html", data)
 			return
 		}
 	}
@@ -146,10 +157,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			data.Results = results
 		}
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, "search.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	s.renderTemplate(w, "search.html", data)
 }
 
 func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
