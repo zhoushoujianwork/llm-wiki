@@ -1,0 +1,13 @@
+{{template "base" .}}
+{{define "title"}}{{.Name}} — llm-wiki{{end}}
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Browse</a> / <a href="/search?q={{.Namespace}}">{{.Namespace}}</a> / {{.Name}}</div>
+<h1>{{.Name}}</h1>
+{{if .Links}}
+<p style="margin-bottom:1rem;font-size:.88rem;color:#6c757d">
+  Links:
+  {{range .Links}}<a href="/search?q={{.}}">{{.}}</a> {{end}}
+</p>
+{{end}}
+<div class="page-content">{{.HTML}}</div>
+{{end}}
