@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
@@ -33,6 +35,17 @@ type compiledEntityRef struct {
 // NewCompiler creates a new compiler instance.
 func NewCompiler() *Compiler {
 	return &Compiler{client: llm.NewAnthropicClient()}
+}
+
+// PromptHash returns a stable hash of the compilation prompt template.
+// It changes whenever the prompt wording changes, allowing the store to
+// detect that previously-compiled pages may be stale.
+func (c *Compiler) PromptHash() string {
+	// Use a sentinel document to render the prompt template, then hash it.
+	sentinel := source.Document{RelPath: "__sentinel__", Type: "markdown"}
+	prompt := buildCompilationPrompt(sentinel, "")
+	sum := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(sum[:8]) // 16 hex chars is plenty for a version tag
 }
 
 // CompileDocument compiles a single document into wiki pages.

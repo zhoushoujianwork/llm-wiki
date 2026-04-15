@@ -50,6 +50,7 @@ type compiledState struct {
 
 type compiledDocument struct {
 	Checksum   string    `json:"checksum"`
+	PromptHash string    `json:"prompt_hash,omitempty"`
 	Pages      []string  `json:"pages"`
 	CompiledAt time.Time `json:"compiled_at"`
 }
@@ -97,7 +98,7 @@ func (s *Store) WritePage(namespace string, page Page) (string, error) {
 }
 
 // StoreDocumentPages replaces the generated pages for a document and persists its checksum.
-func (s *Store) StoreDocumentPages(namespace string, doc source.Document, pages []Page) error {
+func (s *Store) StoreDocumentPages(namespace string, doc source.Document, pages []Page, promptHash string) error {
 	if err := os.MkdirAll(s.rootDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create wiki root: %w", err)
 	}
@@ -125,6 +126,7 @@ func (s *Store) StoreDocumentPages(namespace string, doc source.Document, pages 
 
 	s.compiledState.Documents[key] = compiledDocument{
 		Checksum:   doc.Checksum,
+		PromptHash: promptHash,
 		Pages:      writtenPages,
 		CompiledAt: time.Now().UTC(),
 	}
@@ -133,7 +135,8 @@ func (s *Store) StoreDocumentPages(namespace string, doc source.Document, pages 
 }
 
 // NeedsCompilation reports whether a document should be recompiled.
-func (s *Store) NeedsCompilation(namespace string, doc source.Document) bool {
+// promptHash is the hash of the current compilation prompt; an empty string skips prompt-version checking.
+func (s *Store) NeedsCompilation(namespace string, doc source.Document, promptHash string) bool {
 	if strings.TrimSpace(doc.Checksum) == "" {
 		return true
 	}
@@ -143,7 +146,16 @@ func (s *Store) NeedsCompilation(namespace string, doc source.Document) bool {
 		return true
 	}
 
-	return entry.Checksum != doc.Checksum
+	if entry.Checksum != doc.Checksum {
+		return true
+	}
+
+	// If a prompt hash is provided and differs from what was used last time, recompile.
+	if promptHash != "" && entry.PromptHash != promptHash {
+		return true
+	}
+
+	return false
 }
 
 // RebuildIndex rebuilds the concept → page index.
@@ -288,6 +300,70 @@ func (s *Store) ReadPage(path string) (string, error) {
 // GetEntities returns the concept → page index.
 func (s *Store) GetEntities() map[string][]string {
 	return s.index.Entries
+}
+
+// StatusEntry describes the compilation state of a single document.
+type StatusEntry struct {
+	Namespace  string
+	RelPath    string
+	Stale      bool
+	Reason     string
+	CompiledAt time.Time
+}
+
+// StatusEntries returns the compilation status for every tracked document,
+// cross-checked against the current documents supplied by the caller.
+// Documents present in currentDocs but not yet compiled are reported as stale.
+// promptHash may be empty to skip prompt-version staleness checks.
+func (s *Store) StatusEntries(namespace string, currentDocs []source.Document, promptHash string) []StatusEntry {
+	var entries []StatusEntry
+
+	// Build a set of current doc keys for fast lookup.
+	current := make(map[string]source.Document, len(currentDocs))
+	for _, d := range currentDocs {
+		current[s.documentKey(namespace, d.RelPath)] = d
+	}
+
+	// Report status for every document we know about in the compiled state.
+	for key, compiled := range s.compiledState.Documents {
+		doc, exists := current[key]
+		entry := StatusEntry{
+			Namespace:  namespace,
+			CompiledAt: compiled.CompiledAt,
+		}
+		// Recover RelPath from key (format: "namespace::relpath")
+		if idx := strings.Index(key, "::"); idx >= 0 {
+			entry.RelPath = key[idx+2:]
+		} else {
+			entry.RelPath = key
+		}
+
+		if !exists {
+			entry.Stale = true
+			entry.Reason = "source document no longer found"
+		} else if doc.Checksum != compiled.Checksum {
+			entry.Stale = true
+			entry.Reason = "content changed"
+		} else if promptHash != "" && compiled.PromptHash != promptHash {
+			entry.Stale = true
+			entry.Reason = "prompt version changed"
+		}
+		entries = append(entries, entry)
+	}
+
+	// Also report documents that exist in source but have never been compiled.
+	for key, doc := range current {
+		if _, compiled := s.compiledState.Documents[key]; !compiled {
+			entries = append(entries, StatusEntry{
+				Namespace: namespace,
+				RelPath:   doc.RelPath,
+				Stale:     true,
+				Reason:    "never compiled",
+			})
+		}
+	}
+
+	return entries
 }
 
 func (s *Store) documentKey(namespace, relPath string) string {

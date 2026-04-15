@@ -115,7 +115,7 @@ func NewFeedbackStatsCmd() *cobra.Command {
 func submitAnonymousFeedback(c *feedback.CollectorImpl, format string) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("\n--- Submit Anonymous Feedback ---\n")
+	fmt.Println("\n--- Submit Anonymous Feedback ---")
 	
 	fmt.Print("Enter feedback type (error/outdated/incomplete/unclear/suggestion/duplicate/other): ")
 	fbTypeStr, _ := reader.ReadString('\n')
@@ -160,7 +160,7 @@ func submitAnonymousFeedback(c *feedback.CollectorImpl, format string) error {
 func submitPageFeedback(c *feedback.CollectorImpl, pagePath string, format string) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("\n--- Page Feedback ---\n")
+	fmt.Println("\n--- Page Feedback ---")
 	
 	fmt.Print("Feedback type (error/outdated/incomplete/unclear/broken_link/suggestion/duplicate/other): ")
 	fbTypeStr, _ := reader.ReadString('\n')
@@ -210,7 +210,7 @@ func listFeedback(c *feedback.CollectorImpl, format string, ctx context.Context)
 		return fmt.Errorf("failed to list feedback: %w", err)
 	}
 
-	fmt.Println("=== Submitted Feedback ===\n")
+	fmt.Println("=== Submitted Feedback ===")
 	
 	if len(fbList) == 0 {
 		fmt.Println("No feedback found.")
@@ -274,7 +274,7 @@ func showStats(c *feedback.CollectorImpl) error {
 		return fmt.Errorf("failed to get stats: %w", err)
 	}
 
-	fmt.Println("=== Feedback Statistics ===\n")
+	fmt.Println("=== Feedback Statistics ===")
 	fmt.Printf("Total Feedback: %d\n\n", stats.Total)
 	
 	fmt.Println("By Type:")

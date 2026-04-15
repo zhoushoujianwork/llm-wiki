@@ -143,7 +143,7 @@ func NewScheduleDisableCmd() *cobra.Command {
 func listTasks(manager *scheduler.Manager, format string) error {
 	tasks := manager.ListTasks()
 
-	fmt.Println("=== Scheduled Tasks ===\n")
+	fmt.Println("=== Scheduled Tasks ===")
 	
 	if len(tasks) == 0 {
 		fmt.Println("No tasks scheduled. Use 'llm-wiki schedule add' to add one.")
